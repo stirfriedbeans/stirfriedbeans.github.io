@@ -463,8 +463,8 @@ const ARTISTS = [
       instagram:"https://www.instagram.com/lilliee183/",            // <-- paste Lillie's instagram URL
       website:"https://lilliee.my.canva.site/"               // <-- paste Lillie's website URL
     },
-    artwork:["images/lillie-art1.png","images/lillie-art2.png","images/lillie-art3.png","images/lillie-art4.png","images/lillie-art5.png","images/lillie-art6.png"],
-    merch:["images/lillie-merch1.png","images/lillie-merch2.png","images/lillie-merch3.png","images/lillie-merch4.png","images/lillie-merch5.png","images/lillie-merch6.png"]
+    artwork:{prefix:"images/lillie-art"},
+    merch:{prefix:"images/lillie-merch"}
   },
   {
     id:"tauge",
@@ -478,8 +478,8 @@ const ARTISTS = [
       twitter:"https://x.com/taugeeee",              // <-- paste Tauge's twitter URL
       website:"https://taugeeee.wixsite.com/portfolio/conportfolio"               // <-- paste Tauge's website URL
     },
-    artwork:["images/tauge-art1.png","images/tauge-art2.png","images/tauge-art3.png","images/tauge-art4.png","images/tauge-art5.png","images/tauge-art6.png","images/tauge-art7.png","images/tauge-art8.png","images/tauge-art9.png"],
-    merch:["images/tauge-merch1.png","images/tauge-merch2.png","images/tauge-merch3.png","images/tauge-merch4.png","images/tauge-merch5.png","images/tauge-merch6.png"]
+    artwork:{prefix:"images/tauge-art"},
+    merch:{prefix:"images/tauge-merch"}
   },
   {
     id:"henley",
@@ -491,8 +491,8 @@ const ARTISTS = [
     socials:{
       instagram:"https://www.instagram.com/henleyconfettey"            // <-- paste Henley's instagram URL
     },
-    artwork:["images/henley-art1.png","images/henley-art2.png","images/henley-art3.png","images/henley-art4.png","images/henley-art5.png","images/henley-art6.png"],
-    merch:["images/henley-merch1.png","images/henley-merch2.png","images/henley-merch3.png","images/henley-merch4.png","images/henley-merch5.png","images/henley-merch6.png"]
+    artwork:{prefix:"images/henley-art"},
+    merch:null                  // <-- no merch section for Henley
   }
 ];
 
@@ -577,16 +577,67 @@ renderTags(TAGS,document.getElementById('tags'));
 
 /* ---------- build artist views ---------- */
 const viewsEl=document.getElementById('artistViews');
+
+/* Highest image number the auto-detect looks for in each gallery.
+   Raise it if you ever go past 24 images in one gallery. */
+const MAX_IMAGES = 24;
+
+/* File extension your images use. Change if you switch to .jpg/.webp. */
+const EXT = "png";
+
+/* Returns the src if that file exists, otherwise null. */
+function probe(src){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>res(src);
+    img.onerror=()=>res(null);
+    img.src=src;
+  });
+}
+
+/* Finds which files actually exist for a prefix.
+   Checks <prefix>1..<prefix>MAX all at once and keeps the ones that
+   load, in numeric order. Missing numbers in the middle are skipped
+   safely, so gaps in your filenames are fine. */
+async function detectImages(prefix){
+  const found=await Promise.all(
+    Array.from({length:MAX_IMAGES},(_,i)=>probe(`${prefix}${i+1}.${EXT}`))
+  );
+  return found.filter(Boolean);
+}
+
+/* Accepts {prefix:"..."} to auto-detect, or an explicit array of paths. */
+async function resolveGallery(cfg){
+  if(!cfg)return [];
+  if(Array.isArray(cfg))return cfg;
+  if(cfg.prefix)return detectImages(cfg.prefix);
+  return [];
+}
+
 function galleryHTML(imgs,label,accent){
+  if(!imgs.length)return '';          // no images -> no section at all
   const cells=imgs.map((src,i)=>
     `<div class="cell" data-img="${src}" role="button" tabindex="0" aria-label="View image ${i+1}">
-       <img src="${src}" alt="" loading="lazy" onerror="this.parentElement.classList.add('empty');this.remove()">
+       <img src="${src}" alt="" loading="lazy">
      </div>`
   ).join('');
   return `<div class="gallery-section">
      <div class="gallery-label" style="background:${accent}">${label}</div>
      <div class="grid">${cells}</div>
    </div>`;
+}
+
+/* Fills in an artist's galleries once, the first time their page is opened. */
+const galleriesLoaded={};
+async function loadGalleries(a){
+  if(galleriesLoaded[a.id])return;
+  galleriesLoaded[a.id]=true;
+  const [art,merch]=await Promise.all([
+    resolveGallery(a.artwork),
+    resolveGallery(a.merch)
+  ]);
+  const target=document.querySelector(`#view-${a.id} .av-galleries`);
+  if(target)target.innerHTML=galleryHTML(art,'artwork',a.accent)+galleryHTML(merch,'merch',a.accent);
 }
 ARTISTS.forEach(a=>{
   const socialLinks=Object.entries(a.socials).map(([k,url])=>
@@ -604,10 +655,7 @@ ARTISTS.forEach(a=>{
         <div class="socials">${socialLinks}</div>
         ${a.bio ? `<p class="av-bio">${a.bio}</p>` : ''}
       </div>
-      <div class="av-galleries">
-        ${galleryHTML(a.artwork,'artwork',a.accent)}
-        ${galleryHTML(a.merch,'merch',a.accent)}
-      </div>
+      <div class="av-galleries"></div>
     </div>
   `;
   viewsEl.appendChild(v);
@@ -627,6 +675,7 @@ function openArtist(id){
   document.getElementById('view-'+id).classList.add('active');
   bar.style.background=a.accent;
   barLabel.textContent=a.barName;
+  loadGalleries(a);
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function goHome(){
